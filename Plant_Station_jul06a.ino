@@ -22,9 +22,9 @@
 
 AveragingFilter<1024> temperatureFilter;
 int32_t temperatureMilliC = 0; // Filtered
-int64_t temperatureDerivativeMilliC = 0; // 32.32 fixed point milli-degrees per sample period
+float temperatureDerivativeMilliC = 0;
 float temperature = 0.0; // Filtered
-float temperatureDerivative = 0.0; // Degrees per minute
+float temperatureDerivative = 0.0; // Degrees per second
 
 bool builtinLedCtrl = false;
 bool criticalHighTemperature = false;
@@ -76,7 +76,6 @@ void setup() {
   // Connect to Arduino IoT Cloud
   ArduinoCloud.begin(ArduinoIoTPreferredConnection);
 
-
   setDebugMessageLevel(2);
   ArduinoCloud.printDebugInfo();
 
@@ -87,7 +86,9 @@ void setup() {
   }
 
   // Now that we are connected to the cloud, we can safely start the NTP Client
+  Serial.println("Connecting to time server...");
   timeClient.begin();
+  Serial.print(String("Time is ") + formatLocalTime());
 
   // Set color to blue once connected to the Arduino server
   rgb_blue();
@@ -96,6 +97,8 @@ void setup() {
   buzzer_beepShort();
 
   loopCounter = 0;
+
+  Serial.println("Finished setup");
 }
 
 void loop() {
@@ -105,7 +108,15 @@ void loop() {
 
   loopCounter++;
 
-  if (tmrTimeSync.check()) timeClient.update();
+  if (ArduinoCloud.connected()) {
+    rgb_blue();
+  } else {
+    rgb_green();
+  }
+
+  if (tmrTimeSync.check()) {
+    timeClient.update();
+  }
 
   // Flash builtin LED
   if (tmrBlinkLed.check()) {
@@ -125,10 +136,11 @@ void loop() {
     // Temperature derivative
     temperatureDerivativeMilliC = temperatureFilter.slope();
 
-    // Convert to degrees per minute.
-    // Ratio 60000/tmrTemperatureSample.intervalMs() to convert from sample period to minutes.
-    // Ratio 32768 to convert from 32.32 fixed point to float.
-    temperatureDerivative = (float)temperatureDerivativeMilliC / tmrTemperatureSample.intervalMs() * 60000 / 32768;
+    // Convert to degrees per second.
+    // Ratio 1000/tmrTemperatureSample.intervalMs() to convert from sample period to seconds.
+    // Factor (1/1000) to convert from millidegrees to degrees.
+    // The 1000s cancel out.
+    temperatureDerivative = (float)temperatureDerivativeMilliC / tmrTemperatureSample.intervalMs();
 
     cloud_temperatureDerivative = temperatureDerivative;
     cloud_fanSpeedRpmOut = fan_readSpeed();
@@ -186,17 +198,17 @@ void controlLoop() {
   fanSpeedCtrl = fanSpeedIntegrator + fanSpeedProportional + fanSpeedD;
   fanSpeedCtrl = constrain(fanSpeedCtrl, -0.1, 1.0);
 
-  Serial.print(temperature, 2);
+  Serial.print(temperature, 3);
   Serial.print(",");
-  Serial.print(temperatureDerivative, 2);
+  Serial.print(temperatureDerivative, 3);
   Serial.print(",");
-  Serial.print(fanSpeedProportional, 2);
+  Serial.print(fanSpeedProportional, 3);
   Serial.print(",");
-  Serial.print(fanSpeedIntegrator, 2);
+  Serial.print(fanSpeedIntegrator, 3);
   Serial.print(",");
-  Serial.print(fanSpeedD, 2);
+  Serial.print(fanSpeedD, 3);
   Serial.print(",");
-  Serial.println(fanSpeedCtrl, 2);
+  Serial.println(fanSpeedCtrl, 3);
 
   // Treating the fan on/off and the heat pad as just extensions
   // of the fan speed in the negative direction. Basically, fanSpeedCtrl
