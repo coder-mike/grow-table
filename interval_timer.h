@@ -33,5 +33,9 @@ public:
   uint32_t intervalMs() {
     return intervalMs_;
   }
+
+  void reset() {
+    nextExpire_ = millis() + intervalMs_;
+  }
 };
 

@@ -1,4 +1,5 @@
 #include "arduino_secrets.h"
+
 // Timezone - Version: Latest
 #include <Timezone.h>
 
@@ -21,7 +22,7 @@
 
 AveragingFilter<1024> temperatureFilter;
 int32_t temperatureMilliC = 0; // Filtered
-int64_t temperatureDerivative = 0; // 32.32 fixed point milli-degrees per sample period
+int64_t temperatureDerivativeMilliC = 0; // 32.32 fixed point milli-degrees per sample period
 float temperature = 0.0; // Filtered
 float temperatureDerivative = 0.0; // Degrees per minute
 
@@ -52,6 +53,7 @@ void remoteControl();
 void controlLoop();
 void refreshCurrentHour();
 String formatLocalTime();
+void doReboot();
 
 void setup() {
   initIo();
@@ -78,8 +80,6 @@ void setup() {
   setDebugMessageLevel(2);
   ArduinoCloud.printDebugInfo();
 
-  lastMillis = millis();
-
   // Wait for cloud connection before starting NTP UDP
   while (ArduinoCloud.connected() != 1) {
     ArduinoCloud.update();
@@ -99,7 +99,7 @@ void setup() {
 }
 
 void loop() {
-  if (reboot) while(1);
+  if (reboot) doReboot();
 
   ArduinoCloud.update();
 
@@ -145,10 +145,8 @@ void loop() {
     fanOnOff = cloud_fanOnOff;
     fanSpeedCtrl = cloud_fanSpeedCtrl;
     if (cloud_buzzer) { buzzer_beepLong(); cloud_buzzer = false; }
-    nextRemoteControlExpire -= deltaMs;
-    if (nextRemoteControlExpire < 0) {
+    if (tmrRemoteControlExpire.check()) {
       cloud_remoteCtrl = false;
-      nextRemoteControlExpire = 0;
     }
   }
 
@@ -183,10 +181,22 @@ void controlLoop() {
   fanSpeedIntegrator += amountOverTemp * 0.001;
   fanSpeedIntegrator = constrain(fanSpeedIntegrator, -0.1, 1.0);
 
-  fanSpeedD = 0;//temperatureDerivative * 0.3;
+  fanSpeedD = 0; //temperatureDerivative * 0.3;
 
   fanSpeedCtrl = fanSpeedIntegrator + fanSpeedProportional + fanSpeedD;
   fanSpeedCtrl = constrain(fanSpeedCtrl, -0.1, 1.0);
+
+  Serial.print(temperature, 2);
+  Serial.print(",");
+  Serial.print(temperatureDerivative, 2);
+  Serial.print(",");
+  Serial.print(fanSpeedProportional, 2);
+  Serial.print(",");
+  Serial.print(fanSpeedIntegrator, 2);
+  Serial.print(",");
+  Serial.print(fanSpeedD, 2);
+  Serial.print(",");
+  Serial.println(fanSpeedCtrl, 2);
 
   // Treating the fan on/off and the heat pad as just extensions
   // of the fan speed in the negative direction. Basically, fanSpeedCtrl
@@ -243,7 +253,7 @@ void onCloudBuzzerChange()  {
 void onCloudFanSpeedCtrlChange()  {
 }
 void onCloudRemoteCtrlChange()  {
-  nextRemoteControlExpire = remoteControlExpireMs;
+  tmrRemoteControlExpire.reset();
 }
 void onCloudLampCtrlChange()  {
 }
@@ -253,6 +263,11 @@ void onCloudFanOnOffChange()  {
 }
 void onRebootChange()  {
   if (reboot) {
-    while(1);
+    doReboot();
   }
+}
+
+void doReboot() {
+  Serial.println("Rebooting...");
+  while(1);
 }
