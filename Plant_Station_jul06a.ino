@@ -20,11 +20,13 @@
 #include "interval_timer.h"
 #include "averaging_filter.h"
 
-AveragingFilter<1024> temperatureFilter;
+AveragingFilter<1024> temperatureFilter; // Note: don't make this too big or the device runs out of dynamic memory and reboots constantly.
+AveragingFilter<32> temperatureDerivativeFilter;
 int32_t temperatureMilliC = 0; // Filtered
 float temperatureDerivativeMilliC = 0;
 float temperature = 0.0; // Filtered
-float temperatureDerivative = 0.0; // Degrees per second
+int32_t lastTemperatureMilliC = 0; // For derivative
+float temperatureDerivative = 0.0; // Filtered (Degrees per second)
 
 bool builtinLedCtrl = false;
 bool criticalHighTemperature = false;
@@ -42,6 +44,8 @@ IntervalTimer tmrOneSecond(1000);
 IntervalTimer tmrBlinkLed(500);
 IntervalTimer tmrRemoteControlExpire(1000 * 60 * 5); // 5 min
 IntervalTimer tmrTemperatureSample(10); // 10ms
+IntervalTimer tmrArudinoCloudUpdate(1000);
+IntervalTimer tmrLoopMaxSpeed(1);
 
 int currentHour = 0; // 0 to 23
 const int lightOnHour = 7; // 7 AM
@@ -102,11 +106,21 @@ void setup() {
 }
 
 void loop() {
+
   if (reboot) doReboot();
 
-  ArduinoCloud.update();
-
+  if (!tmrLoopMaxSpeed.check()) return;
   loopCounter++;
+
+  if (tmrArudinoCloudUpdate.check()) {
+    // Note: this seems to be a blocking call and can be really slow. So doing this once per second
+    // instead of every loop cycle seems to be a compromise that at least helps the temperature
+    // reading to continue in the background.
+    unsigned long start = millis();
+    ArduinoCloud.update();
+    unsigned long end = millis();
+    arduinoCloudUpdateDelay = end - start;
+  }
 
   if (ArduinoCloud.connected()) {
     rgb_blue();
@@ -133,14 +147,10 @@ void loop() {
     temperature = (float)temperatureMilliC * 0.001f;
     cloud_temperature = temperature;
 
-    // Temperature derivative
-    temperatureDerivativeMilliC = temperatureFilter.slope();
-
-    // Convert to degrees per second.
-    // Ratio 1000/tmrTemperatureSample.intervalMs() to convert from sample period to seconds.
-    // Factor (1/1000) to convert from millidegrees to degrees.
-    // The 1000s cancel out.
-    temperatureDerivative = (float)temperatureDerivativeMilliC / tmrTemperatureSample.intervalMs();
+    // Temperature derivative (calculated once per second to reduce noise and make the calculations easier, and averaged over 32 seconds)
+    if (lastTemperatureMilliC == 0) lastTemperatureMilliC = temperatureMilliC;
+    temperatureDerivative = temperatureDerivativeFilter.filter(temperatureMilliC - lastTemperatureMilliC) * 0.001f; // Conversion from millidegrees to degrees.
+    lastTemperatureMilliC = temperatureMilliC;
 
     cloud_temperatureDerivative = temperatureDerivative;
     cloud_fanSpeedRpmOut = fan_readSpeed();
@@ -190,13 +200,19 @@ void controlLoop() {
   // Integral contribution to PI fan control. The longer the temperature stays
   // above the target, the higher the fan speed will get to try bring it back.
   // The further out it is, the faster the fan speed will change.
-  fanSpeedIntegrator += amountOverTemp * 0.001;
-  fanSpeedIntegrator = constrain(fanSpeedIntegrator, -0.1, 1.0);
+  fanSpeedIntegrator += amountOverTemp * 0.0005;
+  fanSpeedIntegrator = constrain(fanSpeedIntegrator, -1.0, 1.0);
 
-  fanSpeedD = 0; //temperatureDerivative * 0.3;
+  // Proportional to the derivative. 0.1 increment to the control signal for
+  // every 1 degree per minute. Or to put another way, if we expect the temperature
+  // to increase by 5 degrees over the next minute (quite fast) then this will add
+  // 50% to the fan speed. This may be a little bit conservative, but making this
+  // factor too high might make the system unstable.
+  // fanSpeedD = (temperatureDerivative * 60) * 0.1;
+  fanSpeedD = 0;
 
   fanSpeedCtrl = fanSpeedIntegrator + fanSpeedProportional + fanSpeedD;
-  fanSpeedCtrl = constrain(fanSpeedCtrl, -0.1, 1.0);
+  fanSpeedCtrl = constrain(fanSpeedCtrl, -1.0, 1.0);
 
   Serial.print(temperature, 3);
   Serial.print(",");
@@ -215,14 +231,14 @@ void controlLoop() {
   // is the amount by which the control circuit is trying to cool the
   // system
 
-  if (fanSpeedCtrl > -0.04) {
+  if (fanSpeedCtrl > -0.4) {
     fanOnOff = true; // Fan on
-  } else if (fanSpeedCtrl < -0.05) {
+  } else if (fanSpeedCtrl < -0.5) {
     fanOnOff = false; // Fan off
   }
-  if (fanSpeedCtrl <= -0.09) {
+  if (fanSpeedCtrl <= -0.9) {
     heatCtrl = true; // Heat pad on
-  } else if (fanSpeedCtrl >= -0.05) {
+  } else if (fanSpeedCtrl >= -0.5) {
     heatCtrl = false; // Heat pad off
   }
 
