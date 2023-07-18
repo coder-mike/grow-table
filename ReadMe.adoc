@@ -1,1 +1,0 @@
-Note: I run this project in Arduino IDE. I don't actually use these local files. These are just a backup. I use the cloud instance of this project.
