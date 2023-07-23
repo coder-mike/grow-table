@@ -50,7 +50,7 @@ IntervalTimer tmrLoopMaxSpeed(1);
 int currentHour = 0; // 0 to 23
 const int lightOnHour = 7; // 7 AM
 const int lightOffHour = 19; // 7 PM
-const float targetTemperature = 25;
+const float targetTemperature = 21;
 const float absoluteMaximumTemperature = 35.0;
 
 void remoteControl();
@@ -236,9 +236,12 @@ void controlLoop() {
   } else if (fanSpeedCtrl < -0.5) {
     fanOnOff = false; // Fan off
   }
-  if (fanSpeedCtrl <= -0.9) {
+  // I moved the heatpad to the range later than the fan speed, so there
+  // is a range where both the heatpad and fan will be on, which I think
+  // is better for airflow
+  if (fanSpeedCtrl <= -0.3) {
     heatCtrl = true; // Heat pad on
-  } else if (fanSpeedCtrl >= -0.5) {
+  } else if (fanSpeedCtrl >= -0.1) {
     heatCtrl = false; // Heat pad off
   }
 
