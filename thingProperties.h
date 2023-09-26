@@ -6,56 +6,34 @@
 const char SSID[]     = SECRET_SSID;    // Network SSID (name)
 const char PASS[]     = SECRET_OPTIONAL_PASS;    // Network password (use for WPA, or use as key for WEP)
 
-void onCloudFanSpeedCtrlChange();
-void onCloudBuzzerChange();
-void onCloudFanOnOffChange();
-void onCloudHeatCtrlChange();
+void onCloudTemperatureHighChange();
+void onCloudTemperatureLowChange();
 void onCloudLampCtrlChange();
 void onCloudRemoteCtrlChange();
 void onRebootChange();
 
 String cloud_time;
-float cloud_fanSpeedCtrl;
 float cloud_fanSpeedRpmOut;
 float cloud_temperature;
-float cloud_temperatureDerivative;
-float fanSpeedCtrl;
-float fanSpeedD;
+float cloud_temperatureHigh;
+float cloud_temperatureLow;
 float fanSpeedIntegrator;
 float fanSpeedProportional;
-float temperatureRaw;
-int loopCounter;
-bool cloud_buzzer;
-bool cloud_fanOnOff;
-bool cloud_heatCtrl;
 bool cloud_lampCtrl;
 bool cloud_remoteCtrl;
-bool fanOnOff;
-bool heatCtrl;
-bool lampCtrl;
 bool reboot;
 
 void initProperties(){
 
   ArduinoCloud.addProperty(cloud_time, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(cloud_fanSpeedCtrl, READWRITE, ON_CHANGE, onCloudFanSpeedCtrlChange);
   ArduinoCloud.addProperty(cloud_fanSpeedRpmOut, READ, 1 * SECONDS, NULL);
   ArduinoCloud.addProperty(cloud_temperature, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(cloud_temperatureDerivative, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(fanSpeedCtrl, READ, ON_CHANGE, NULL);
-  ArduinoCloud.addProperty(fanSpeedD, READ, 1 * SECONDS, NULL);
+  ArduinoCloud.addProperty(cloud_temperatureHigh, READWRITE, ON_CHANGE, onCloudTemperatureHighChange);
+  ArduinoCloud.addProperty(cloud_temperatureLow, READWRITE, ON_CHANGE, onCloudTemperatureLowChange);
   ArduinoCloud.addProperty(fanSpeedIntegrator, READ, 1 * SECONDS, NULL);
   ArduinoCloud.addProperty(fanSpeedProportional, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(temperatureRaw, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(loopCounter, READ, 1 * SECONDS, NULL);
-  ArduinoCloud.addProperty(cloud_buzzer, READWRITE, ON_CHANGE, onCloudBuzzerChange);
-  ArduinoCloud.addProperty(cloud_fanOnOff, READWRITE, ON_CHANGE, onCloudFanOnOffChange);
-  ArduinoCloud.addProperty(cloud_heatCtrl, READWRITE, ON_CHANGE, onCloudHeatCtrlChange);
   ArduinoCloud.addProperty(cloud_lampCtrl, READWRITE, ON_CHANGE, onCloudLampCtrlChange);
   ArduinoCloud.addProperty(cloud_remoteCtrl, READWRITE, 1 * SECONDS, onCloudRemoteCtrlChange);
-  ArduinoCloud.addProperty(fanOnOff, READ, ON_CHANGE, NULL);
-  ArduinoCloud.addProperty(heatCtrl, READ, ON_CHANGE, NULL);
-  ArduinoCloud.addProperty(lampCtrl, READ, ON_CHANGE, NULL);
   ArduinoCloud.addProperty(reboot, READWRITE, ON_CHANGE, onRebootChange);
 
 }

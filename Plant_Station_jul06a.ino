@@ -50,14 +50,30 @@ IntervalTimer tmrLoopMaxSpeed(1);
 int currentHour = 0; // 0 to 23
 const int lightOnHour = 7; // 7 AM
 const int lightOffHour = 19; // 7 PM
-const float targetTemperature = 21;
+float temperatureLow = 21;
+float temperatureHigh = 28;
 const float absoluteMaximumTemperature = 35.0;
+bool lampCtrl = false;
+bool heatCtrl = false;
+bool fanOnOff = false;
+bool fanSpeedCtrl = false;
 
 void remoteControl();
 void controlLoop();
 void refreshCurrentHour();
 String formatLocalTime();
 void doReboot();
+
+// Dummy variables for cloud variables I've deleted
+int loopCounter = 0;
+int arduinoCloudUpdateDelay = 0;
+long temperatureRaw = 0;
+float cloud_temperatureDerivative = 0;
+bool cloud_heatCtrl = false;
+bool cloud_fanOnOff = false;
+bool cloud_fanSpeedCtrl = false;
+bool cloud_buzzer = false;
+float fanSpeedD = 0;
 
 void setup() {
   initIo();
@@ -172,6 +188,18 @@ void loop() {
     }
   }
 
+  if ((cloud_temperatureLow > 0) && (cloud_temperatureLow < 35)) {
+    temperatureLow = cloud_temperatureLow;
+  } else {
+    cloud_temperatureLow = temperatureLow;
+  }
+
+  if ((cloud_temperatureHigh > cloud_temperatureLow) && (cloud_temperatureHigh < 35)) {
+    temperatureHigh = cloud_temperatureHigh;
+  } else {
+    cloud_temperatureHigh = temperatureHigh;
+  }
+
   // output
   relayL1_set(lampCtrl);
   relayL2_set(heatCtrl);
@@ -190,17 +218,20 @@ void controlLoop() {
 
   /* PID controller */
 
-  // How much we are over the threshold temperature, in degrees, or negative if below temp.
-  float amountOverTemp = (temperature - targetTemperature);
-
   // Proportional contribution to PI fan control. As the temperature goes up,
-  // this has an immediate effect on the fan speed.
-  fanSpeedProportional = amountOverTemp * (1.0/3.0);
+  // this has an immediate effect on the fan speed, with the highest when the
+  // temp reaches temperatureHigh
+  fanSpeedProportional = (temperature - temperatureLow) / (temperatureHigh - temperatureLow);
 
   // Integral contribution to PI fan control. The longer the temperature stays
-  // above the target, the higher the fan speed will get to try bring it back.
-  // The further out it is, the faster the fan speed will change.
-  fanSpeedIntegrator += amountOverTemp * 0.0005;
+  // outside the target range, the higher the fan speed will get to try bring it
+  // back. The further out it is, the faster the fan speed will change. Within
+  // the allowed temperature band, the integrator doesn't change.
+  if (temperature > temperatureHigh) {
+    fanSpeedIntegrator += (temperature - temperatureHigh) * 0.0005;
+  } else if (temperature < temperatureLow) {
+    fanSpeedIntegrator -= (temperatureLow - temperature) * 0.0005;
+  }
   fanSpeedIntegrator = constrain(fanSpeedIntegrator, -1.0, 1.0);
 
   // Proportional to the derivative. 0.1 increment to the control signal for
